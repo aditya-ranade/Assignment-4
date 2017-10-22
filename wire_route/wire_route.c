@@ -3,64 +3,404 @@
 #include <string.h>
 #include <libgen.h>
 #include <assert.h>
+#include <stdbool.h>
 #include "mpi.h"
 #include "wire_route.h"
+#include <limits.h>
 
-// Initialize problem
+
+typedef struct {
+    int x1;
+    int x2;
+    int y1;
+    int y2;
+    int bend;
+    int path;
+} wire_t;
+
+typedef struct {
+    int *array;
+    int *transpose;
+    int rows;
+    int cols;
+} costs_t;
+
+wire_t *wires;
+costs_t *costs;
+
+int num_wires;
+
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
+
 static inline void init(int numRows, int numCols, int numWires)
 {
-    //TODO Implement code here
+    costs = (costs_t *)malloc(sizeof(costs_t));
+    wires = (wire_t *)malloc(sizeof(wire_t)*numWires);
+    costs->array = (int *)calloc(numRows*numCols, sizeof(int));
+    costs->transpose = (int *)calloc(numRows*numCols, sizeof(int));
+    costs->rows = numRows;
+    costs->cols = numCols;
+    num_wires = numWires;
+        
 }
 
 // Initialize a given wire
 static inline void initWire(int wireIndex, int x1, int y1, int x2, int y2)
 {
-    //TODO Implement code here
+    (&wires[wireIndex])->x1 = x1;
+    (&wires[wireIndex])->y1 = y1;
+    (&wires[wireIndex])->x2 = x2;
+    (&wires[wireIndex])->y2 = y2;
 }
 
 // Return number of rows
 static inline int getNumRows()
 {
-    //TODO Implement code here
-    return 0;
+    return costs->rows;
 }
 
 // Return number of cols
 static inline int getNumCols()
 {
-    //TODO Implement code here
-    return 0;
+    return costs->cols;
 }
 
 // Return number of wires
 static inline int getNumWires()
 {
-    //TODO Implement code here
-    return 0;
+    return num_wires;
 }
 
 // Get cost array entry
 static inline int getCost(int row, int col)
 {
-    //TODO Implement code here
-    return 0;
+    int dim_x = costs->cols;
+    return costs->array[row*dim_x + col];
 }
 
 // Get a wire placement. Returns number of points (should be 2-4 for 0-2 bends).
 static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2, int* x3, int* y3, int* x4, int* y4)
 {
-    //TODO Implement code here
-    return 2;
+    int wx1 = wires[wireIndex].x1;
+    int wy1 = wires[wireIndex].y1;
+    int wx2 = wires[wireIndex].x2;
+    int wy2 = wires[wireIndex].y2;
+    int path = wires[wireIndex].path;
+    int bend = wires[wireIndex].bend;
+
+
+    if (wx1 == wx2 || wy1 == wy2) {
+        *x1 = wx1;
+        *y1 = wy1;
+        *x2 = wx2;
+        *y2 = wy2;
+        return 2;
+    }
+
+    if (path == 0) {
+        if (bend == wx2) {
+            *x1 = wx1;
+            *y1 = wy1;
+            *x2 = wx2;
+            *y2 = wy1;
+            *x3 = wx2;
+            *y3 = wy2;
+            return 3;
+        }
+        else {
+            *x1 = wx1;
+            *y1 = wy1;
+            *x2 = bend;
+            *y2 = wy1;
+            *x3 = bend;
+            *y3 = wy2;
+            *x4 = wx2;
+            *y4 = wy2;
+            return 4;
+        }
+    }
+    else {
+        if (bend == wy2) {
+            *x1 = wx1;
+            *y1 = wy1;
+            *x2 = wx1;
+            *y2 = wy2;
+            *x3 = wx2;
+            *y3 = wy2;
+            return 3;
+        }
+        else {
+            *x1 = wx1;
+            *y1 = wy1;
+            *x2 = wx1;
+            *y2 = bend;
+            *x3 = wx2;
+            *y3 = bend;
+            *x4 = wx2;
+            *y4 = wy2;
+            return 4;
+        }
+    }
 }
+
+
+void increment_cost_x(costs_t *costs, int x1, int x2, int y, int dim_x, int dim_y, int sum) {
+    int multiplier = 1;
+    if (x1 > x2) multiplier = -1;
+    while (x1 != x2) {  
+        costs->array[y*dim_x + x1] += sum;
+        costs->transpose[x1*dim_y + y] += sum;
+        x1 += multiplier;
+    }
+}
+
+
+void increment_cost_y(costs_t *costs, int y1, int y2, int x, int dim_x, int dim_y, int sum) {
+    int multiplier = 1;
+    if (y1 > y2) multiplier = -1;
+    while (y1 != y2) {
+        costs->array[y1*dim_x + x] += sum;
+        costs->transpose[x*dim_y + y1] += sum;
+        y1 += multiplier;
+    }
+}
+
+
+void traverse_path(int x1, int y1, int x2, int y2, int path, int bend, costs_t *costs, int sum) {
+    
+    int dim_x = costs->cols;
+    int dim_y = costs->rows;
+    if (path == 0) {
+        increment_cost_x(costs, x1, bend, y1, dim_x, dim_y, sum);
+        increment_cost_y(costs, y1, y2, bend, dim_x, dim_y, sum);
+        increment_cost_x(costs, bend, x2, y2, dim_x, dim_y, sum);
+    }
+
+    else {
+        increment_cost_y(costs, y1, bend, x1, dim_x, dim_y, sum);
+        increment_cost_x(costs, x1, x2, bend, dim_x, dim_y, sum);
+        increment_cost_y(costs, bend, y2, x2, dim_x, dim_y, sum);
+    }
+    costs->array[y2*dim_x + x2] += sum;
+    costs->transpose[x2*dim_y + y2] += sum;
+    
+}
+
+
+
+void traverse_path1(int x1, int y1, int x2, int y2, int path, int bend, costs_t *costs,
+                                    int *min_costs, int* agg_costs, int i) {
+    
+    int x_multiplier = (x1 > x2) ? -1 : 1;
+    int y_multiplier = (y1 > y2) ? -1 : 1;
+
+    int dimx = costs->cols;
+    int dimy = costs->rows;
+    int *array = costs->array;
+    int *transpose = costs->transpose;
+
+    int val1 = 0;
+    int val2 = 0;
+    int val3 = 0;
+    int val4 = 0;
+    int aggCost1 = 0;
+    int aggCost2 = 0;
+    int aggCost3 = 0;
+    int aggCost4 = 0;
+    int maxCost1 = 0;
+    int maxCost2 = 0;
+    int maxCost3 = 0;
+   
+    if (path == 0) {    
+        while (x1 != bend) {
+            //val1 = array[y1*dimx + x1] + 1;
+            aggCost1 += val1;
+            if (val1 > maxCost1) maxCost1 = val1;       
+            x1 += x_multiplier; 
+        }
+        while (y1 != y2) {
+            //val2 = transpose[x1*dimy + y1] + 1;
+            aggCost2 += val2;
+            if (val2 > maxCost2) maxCost2 = val2;
+            y1 += y_multiplier;     
+        }
+        while (x1 != x2) {
+            //val3 = array[y2*dimx + x1] + 1;
+            aggCost3 += val3;
+            if (val3 > maxCost3) maxCost3 = val3;
+            x1 += x_multiplier;
+        }
+    }
+    else {
+        while (y1 != bend) {
+            //val1 = transpose[x1*dimy + y1] + 1;
+            aggCost1 += val1;
+            if (val1 > maxCost1) maxCost1 = val1;       
+            y1 += y_multiplier; 
+        }
+        while (x1 != x2) {
+            //val2 = array[y1*dimx + x1] + 1;
+            aggCost2 += val2;
+            if (val2 > maxCost2) maxCost2 = val2;
+            x1 += x_multiplier;     
+        }
+        while (y1 != y2) {
+            //val3 = transpose[x1*dimy + y1] + 1;
+            aggCost3 += val3;
+            if (val3 > maxCost3) maxCost3 = val3;
+            y1 += y_multiplier;
+        }
+    }
+    val4 = array[y2*dimx + x2] + 1;
+    aggCost4 = val4;
+    min_costs[i] = MAX(MAX(MAX(maxCost1, maxCost2), maxCost3), val4);
+    agg_costs[i] = aggCost1 + aggCost2 + aggCost3 + aggCost4;
+}
+
+
+
+
+
+static inline void set_random_path(wire_t *w) {
+    int x_multiplier = (w->x1 > w->x2) ? -1 : 1;
+    int y_multiplier = (w->y1 > w->y2) ? -1 : 1;
+    int num_paths_x = abs(w->x1 - w->x2);
+    int num_paths_y = abs(w->y1 - w->y2);
+
+    int number = rand() % (num_paths_x + num_paths_y);
+    if (number < num_paths_x) {
+        w->path = 0;
+        w->bend = w->x1 + x_multiplier*(number + 1);
+    }
+    else {
+        w->path = 1;
+        int offset = number - num_paths_x;
+        w->bend = w->y1 + y_multiplier*(offset + 1);
+    }
+}
+
 
 // Perform computation, including reading/writing output files
 void compute(int procID, int nproc, char* inputFilename, double prob, int numIterations)
 {
-    readInput(inputFilename);
+    const int root = 0;
+    int tag0 = 0; 
+    //int tag1 = 1;
+    MPI_Status status0; //status1;
+    int source;
+    int choice;
+    int span, startIndex, endIndex;
+    int numPaths, numPaths_x;
+    int path, bend;
+    int x1, y1, x2, y2;
+    int x_multiplier, y_multiplier;
+
+
+    if (procID == root) readInput(inputFilename);
+
+    int *min_costs = (int *)calloc(costs->cols*costs->rows, sizeof(int));
+    int *agg_costs = (int *)calloc(costs->cols*costs->rows, sizeof(int));
+
+    for (int i = 0; i < num_wires; i++) {
+        wire_t *w = &wires[i];
+        x1 = w->x1;
+        y1 = w->y1;
+        x2 = w->x2;
+        y2 = w->y2;
+
+        x_multiplier = (x1 > x2) ? -1 : 1;
+        y_multiplier = (y1 > y2) ? -1 : 1;
+
+        numPaths = abs(x1 - x2) + abs(y1-y2);
+        numPaths_x = abs(x1 - x2);
+
+        //if (procID == root) traverse_path(w->x1, w->y1, w->x2, w->y2, w->path, w->bend, costs, -1);
+
+        choice = 0;
+
+        if (choice == 0) {
+            span = (numPaths + nproc - 1) / nproc;
+            startIndex = procID * span;
+            endIndex = MIN(numPaths, startIndex + span);
+
+            for (int j = startIndex; j < endIndex; j++) {
+                if (j < numPaths_x) {
+                    path = 0;
+                    bend = w->x1 + (x_multiplier * (j + 1));
+                    //traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
+                      //                                          agg_costs, j);
+                }
+                else {
+                    path = 1;
+                    bend = y1 + (y_multiplier * (j - numPaths + 1));
+                    //traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
+                      //                                          agg_costs, j);
+                }
+            }
+
+            if (procID != root) {
+                //MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
+                 //   MPI_INT, root, tag0, MPI_COMM_WORLD);
+                //MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
+                  //  MPI_INT, root, tag1, MPI_COMM_WORLD);
+            }
+
+            else {
+                for (source = 1; source < nproc; source++) {
+                    startIndex = source * span;
+                    endIndex = MIN(numPaths, startIndex + span);
+                    //MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, 
+                      //  source, tag0, MPI_COMM_WORLD, &status0);
+                    //MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, source, tag1, MPI_COMM_WORLD, &status1);
+                }
+
+                int index = 0;
+                int minCost = INT_MAX;
+                for (int k = 0; k < costs->rows*costs->cols; k++) {
+                    if (min_costs[k] < minCost) {
+                        minCost = min_costs[k];
+                        index = k;
+                    }
+                    if (min_costs[k] == minCost) {
+                    //    if (agg_costs[k] < agg_costs[index]) index = k;
+                    }
+                }
+                
+                if (index < numPaths_x) {
+                     w->path = 0;
+                     w->bend = w->x1 + (x_multiplier *(index+ 1));
+                }
+                else {
+                    w->path = 1;
+                    w->bend = w->y1 + (y_multiplier * (index - numPaths_x + 1));
+
+                }
+            }
+        }
+        else {
+            if (procID == root) set_random_path(w);
+        }
+        //if (procID == root) traverse_path(x1, y1, x2, y2, w->path, w->bend, costs, 1);   
+        MPI_Barrier(MPI_COMM_WORLD);
+
+    }
+
     //TODO Implement code here
     //TODO Decide which processors should be reading/writing files
-    writeCost(inputFilename, nproc);
-    writeOutput(inputFilename, nproc);
+    
+
+    if (procID == root) {
+        writeCost(inputFilename, nproc);
+        writeOutput(inputFilename, nproc);
+    }
+    free(costs->array);
+    free(costs->transpose);
+    free(costs);
+    free(wires);
+    free(min_costs);
+    free(agg_costs);
 }
 
 // Read input file

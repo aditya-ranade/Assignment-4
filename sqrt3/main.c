@@ -8,7 +8,6 @@ int main (int argc, char* argv[])
     int nproc;
     double startTime;
     double endTime;
-
     // Initialize MPI
     MPI_Init(&argc, &argv);
 
@@ -17,7 +16,9 @@ int main (int argc, char* argv[])
 
     // Get total number of processes specificed at start of run
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+    in a = 5;
 
+    
     // Run computation
     startTime = MPI_Wtime();
     compute(procID, nproc);
