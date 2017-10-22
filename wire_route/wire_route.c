@@ -9,6 +9,37 @@
 #include <limits.h>
 
 
+
+
+        // int block_lengths[6] = {1, 1, 1, 1, 1, 1};
+        // MPI_Datatype types[6] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+        // MPI_Aint     offsets[6];
+
+        // offsets[0] = offsetof(wire_t, x1);
+        // offsets[1] = offsetof(wire_t, x2);
+        // offsets[2] = offsetof(wire_t, y1);
+        // offsets[3] = offsetof(wire_t, y2);
+        // offsets[4] = offsetof(wire_t, bend);
+        // offsets[5] = offsetof(wire_t, path);
+
+        // MPI_Type_create_struct(6, block_lengths, offsets, types, &mpi_wire_type);
+        // MPI_Type_commit(&mpi_wire_type);
+
+        // int block_lengths_c[4] = {1, 1, costs->rows*costs->cols, costs->rows * costs->cols};
+        // MPI_Datatype types_c[4] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+        // MPI_Aint     offsets_c[4];
+
+        // offsets_c[0] = offsetof(costs_t, array);
+        // offsets_c[1] = offsetof(costs_t, transpose);
+        // offsets_c[2] = offsetof(costs_t, rows);
+        // offsets_c[3] = offsetof(costs_t, cols);
+
+        // MPI_Type_create_struct(4, block_lengths_c, offsets_c, types_c, &mpi_cost_type);
+        // MPI_Type_commit(&mpi_cost_type);
+    //}
+    //MPI_Bcast(wires, num_wires, mpi_wire_type, root, MPI_COMM_WORLD);
+    //MPI_Bcast(costs, 1, mpi_cost_type, root, MPI_COMM_WORLD);
+
 typedef struct {
     int x1;
     int x2;
@@ -32,6 +63,8 @@ int num_wires;
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
+
 
 
 static inline void init(int numRows, int numCols, int numWires)
@@ -215,19 +248,19 @@ void traverse_path1(int x1, int y1, int x2, int y2, int path, int bend, costs_t 
    
     if (path == 0) {    
         while (x1 != bend) {
-            //val1 = array[y1*dimx + x1] + 1;
+            val1 = array[y1*dimx + x1] + 1;
             aggCost1 += val1;
             if (val1 > maxCost1) maxCost1 = val1;       
             x1 += x_multiplier; 
         }
         while (y1 != y2) {
-            //val2 = transpose[x1*dimy + y1] + 1;
+            val2 = transpose[x1*dimy + y1] + 1;
             aggCost2 += val2;
             if (val2 > maxCost2) maxCost2 = val2;
             y1 += y_multiplier;     
         }
         while (x1 != x2) {
-            //val3 = array[y2*dimx + x1] + 1;
+            val3 = array[y2*dimx + x1] + 1;
             aggCost3 += val3;
             if (val3 > maxCost3) maxCost3 = val3;
             x1 += x_multiplier;
@@ -235,19 +268,19 @@ void traverse_path1(int x1, int y1, int x2, int y2, int path, int bend, costs_t 
     }
     else {
         while (y1 != bend) {
-            //val1 = transpose[x1*dimy + y1] + 1;
+            val1 = transpose[x1*dimy + y1] + 1;
             aggCost1 += val1;
             if (val1 > maxCost1) maxCost1 = val1;       
             y1 += y_multiplier; 
         }
         while (x1 != x2) {
-            //val2 = array[y1*dimx + x1] + 1;
+            val2 = array[y1*dimx + x1] + 1;
             aggCost2 += val2;
             if (val2 > maxCost2) maxCost2 = val2;
             x1 += x_multiplier;     
         }
         while (y1 != y2) {
-            //val3 = transpose[x1*dimy + y1] + 1;
+            val3 = transpose[x1*dimy + y1] + 1;
             aggCost3 += val3;
             if (val3 > maxCost3) maxCost3 = val3;
             y1 += y_multiplier;
@@ -285,23 +318,29 @@ static inline void set_random_path(wire_t *w) {
 // Perform computation, including reading/writing output files
 void compute(int procID, int nproc, char* inputFilename, double prob, int numIterations)
 {
+    
+
     const int root = 0;
     int tag0 = 0; 
-    //int tag1 = 1;
-    MPI_Status status0; //status1;
+    int tag1 = 1;
+    MPI_Status status0, status1;
     int source;
     int choice;
     int span, startIndex, endIndex;
-    int numPaths, numPaths_x;
+    int numPaths;
+    int numPaths_x;
     int path, bend;
     int x1, y1, x2, y2;
     int x_multiplier, y_multiplier;
+    MPI_Datatype mpi_wire_type;
+    MPI_Datatype mpi_cost_type;
 
 
-    if (procID == root) readInput(inputFilename);
 
-    int *min_costs = (int *)calloc(costs->cols*costs->rows, sizeof(int));
-    int *agg_costs = (int *)calloc(costs->cols*costs->rows, sizeof(int));
+    readInput(inputFilename);
+
+    int *min_costs = (int *)calloc(5, sizeof(int));
+    int *agg_costs = (int *)calloc(5, sizeof(int));
 
     for (int i = 0; i < num_wires; i++) {
         wire_t *w = &wires[i];
@@ -316,7 +355,7 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
         numPaths = abs(x1 - x2) + abs(y1-y2);
         numPaths_x = abs(x1 - x2);
 
-        //if (procID == root) traverse_path(w->x1, w->y1, w->x2, w->y2, w->path, w->bend, costs, -1);
+        //traverse_path(w->x1, w->y1, w->x2, w->y2, w->path, w->bend, costs, -1);
 
         choice = 0;
 
@@ -328,73 +367,77 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
             for (int j = startIndex; j < endIndex; j++) {
                 if (j < numPaths_x) {
                     path = 0;
-                    bend = w->x1 + (x_multiplier * (j + 1));
-                    //traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
-                      //                                          agg_costs, j);
+                    bend = x1 + (x_multiplier * (j + 1));
+                    traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
+                                                                agg_costs, j);
                 }
                 else {
                     path = 1;
                     bend = y1 + (y_multiplier * (j - numPaths + 1));
-                    //traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
-                      //                                          agg_costs, j);
+                    traverse_path1(x1, y1, x2, y2, path, bend, costs, min_costs, 
+                                                                agg_costs, j);
                 }
             }
 
             if (procID != root) {
-                //MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
-                 //   MPI_INT, root, tag0, MPI_COMM_WORLD);
-                //MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
-                  //  MPI_INT, root, tag1, MPI_COMM_WORLD);
+                MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
+                    MPI_INT, root, tag0, MPI_COMM_WORLD);
+                MPI_Send(&min_costs[startIndex], endIndex - startIndex, 
+                    MPI_INT, root, tag1, MPI_COMM_WORLD);
             }
 
             else {
                 for (source = 1; source < nproc; source++) {
                     startIndex = source * span;
                     endIndex = MIN(numPaths, startIndex + span);
-                    //MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, 
-                      //  source, tag0, MPI_COMM_WORLD, &status0);
-                    //MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, source, tag1, MPI_COMM_WORLD, &status1);
+                    MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, 
+                        source, tag0, MPI_COMM_WORLD, &status0);
+                    MPI_Recv(&min_costs[startIndex], endIndex - startIndex, MPI_INT, source, tag1, MPI_COMM_WORLD, &status1);
                 }
+            }
 
-                int index = 0;
-                int minCost = INT_MAX;
-                for (int k = 0; k < costs->rows*costs->cols; k++) {
-                    if (min_costs[k] < minCost) {
-                        minCost = min_costs[k];
-                        index = k;
-                    }
-                    if (min_costs[k] == minCost) {
-                    //    if (agg_costs[k] < agg_costs[index]) index = k;
-                    }
+            int index = 0;
+            int minCost = INT_MAX;
+            for (int k = 0; k < 5; k++) {
+                if (min_costs[k] < minCost) {
+                    minCost = min_costs[k];
+                    index = k;
                 }
-                
-                if (index < numPaths_x) {
-                     w->path = 0;
-                     w->bend = w->x1 + (x_multiplier *(index+ 1));
+                if (min_costs[k] == minCost) {
+                    if (agg_costs[k] < agg_costs[index]) index = k;
                 }
-                else {
-                    w->path = 1;
-                    w->bend = w->y1 + (y_multiplier * (index - numPaths_x + 1));
-
-                }
+            }
+            
+            if (index < numPaths_x) {
+                 w->path = 0;
+                 w->bend = w->x1 + (x_multiplier *(index+ 1));
+            }
+            else {
+                w->path = 1;
+                w->bend = w->y1 + (y_multiplier * (index - numPaths_x + 1));
             }
         }
         else {
-            if (procID == root) set_random_path(w);
+            set_random_path(w);
         }
-        //if (procID == root) traverse_path(x1, y1, x2, y2, w->path, w->bend, costs, 1);   
-        MPI_Barrier(MPI_COMM_WORLD);
+        traverse_path(x1, y1, x2, y2, w->path, w->bend, costs, 1);   
 
+        //MPI_Barrier(MPI_COMM_WORLD);
+        for (int row = 0; row < 100; row++) {
+            for (int col = 0; col < 100; col++) {
+                fprintf(stdout, "%d ", getCost(row, col));
+            }
+        }
     }
 
-    //TODO Implement code here
+   // TODO Implement code here
     //TODO Decide which processors should be reading/writing files
     
-
     if (procID == root) {
-        writeCost(inputFilename, nproc);
-        writeOutput(inputFilename, nproc);
+       writeCost(inputFilename, nproc);
+       writeOutput(inputFilename, nproc);  
     }
+
     free(costs->array);
     free(costs->transpose);
     free(costs);
@@ -441,7 +484,7 @@ void readInput(char* inputFilename)
             fprintf(stderr, "Invalid input file format\n");
             exit(-1);
         }
-        initWire(wireIndex, x1, y1, x2, y2);
+        //initWire(wireIndex, x1, y1, x2, y2);
     }
     fclose(fp);
 }
@@ -465,12 +508,17 @@ void writeCost(char* inputFilename, int nproc)
         exit(-1);
     }
     fprintf(fp, "%d %d\n", numCols, numRows);
+    
+    int maxCost = INT_MAX;
     for (row = 0; row < numRows; row++) {
         for (col = 0; col < numCols; col++) {
+            int currCost = getCost(row, col);
             fprintf(fp, "%d ", getCost(row, col));
+            if (currCost < maxCost) maxCost = currCost;
         }
         fprintf(fp, "\n");
     }
+    fprintf(stdout, "total cost = %d \n", maxCost);
     fclose(fp);
     free(costsFilename);
     free(bname);
