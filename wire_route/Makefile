@@ -3,8 +3,8 @@ OBJS += wire_route.o
 OBJS += main.o
 
 CC = mpicc
-#CFLAGS = -Wall -DDEBUG -g # debug flags
-CFLAGS = -std=gnu99 -Wall -g -O3 # release flags
+#CFLAGS = -DDEBUG -g # debug flags
+CFLAGS = -std=gnu99 -g -O3 # release flags
 CFLAGS += -MMD -MP
 LDFLAGS += $(LIBS)
 
