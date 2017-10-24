@@ -9,21 +9,31 @@
 #include <limits.h>
 
 
+typedef struct {
+    int x1;
+    int x2;
+    int y1;
+    int y2;
+    int bend;
+    int path;
+} wire_t;
+
+typedef struct {
+    int *array;
+    int *transpose;
+    int rows;
+    int cols;
+} costs_t;
+
+// int count = 6;
+// int block_lengths[] = {1, 1, 1, 1, 1, 1};
+// MPI_Datatype types[] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+// MPI_Datatype  mpi_wire_type;
+// MPI_Aint     offsets[] = {offsetof(wire_t, x1), offsetof(wire_t, x2), offsetof(wire_t, y1), offsetof(wire_t, y2), offsetof(wire_t, bend), offsetof(wire_t, path)};
 
 
-        // int block_lengths[6] = {1, 1, 1, 1, 1, 1};
-        // MPI_Datatype types[6] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
-        // MPI_Aint     offsets[6];
-
-        // offsets[0] = offsetof(wire_t, x1);
-        // offsets[1] = offsetof(wire_t, x2);
-        // offsets[2] = offsetof(wire_t, y1);
-        // offsets[3] = offsetof(wire_t, y2);
-        // offsets[4] = offsetof(wire_t, bend);
-        // offsets[5] = offsetof(wire_t, path);
-
-        // MPI_Type_create_struct(6, block_lengths, offsets, types, &mpi_wire_type);
-        // MPI_Type_commit(&mpi_wire_type);
+// MPI_Type_Struct(count, block_lengths, offsets, types, &mpi_wire_type);
+// MPI_Type_Commit(&mpi_wire_type);
 
         // int block_lengths_c[4] = {1, 1, costs->rows*costs->cols, costs->rows * costs->cols};
         // MPI_Datatype types_c[4] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT};
@@ -40,21 +50,6 @@
     //MPI_Bcast(wires, num_wires, mpi_wire_type, root, MPI_COMM_WORLD);
     //MPI_Bcast(costs, 1, mpi_cost_type, root, MPI_COMM_WORLD);
 
-typedef struct {
-    int x1;
-    int x2;
-    int y1;
-    int y2;
-    int bend;
-    int path;
-} wire_t;
-
-typedef struct {
-    int *array;
-    int *transpose;
-    int rows;
-    int cols;
-} costs_t;
 
 wire_t *wires;
 costs_t *costs;
@@ -318,7 +313,15 @@ static inline void set_random_path(wire_t *w) {
 }
 
 
-// Perform computation, including reading/writing output files
+
+
+// void compute(int procID, int nproc, char *inputFilename, double prob, int numIterations) {
+
+
+
+// }
+
+
 
 
 void compute(int procID, int nproc, char* inputFilename, double prob, int numIterations)
@@ -328,7 +331,7 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
     const int root = 0;
     int tag0 = 0; 
     int tag1 = 1;
-    MPI_Status status0, status1;
+    MPI_Status status0, status1, status2;
     int source;
     int choice;
     int numPaths;
@@ -339,22 +342,21 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
     MPI_Datatype mpi_wire_type;
     MPI_Datatype mpi_cost_type;
     int mC;
+    int tag2;
 
     readInput(inputFilename);
     int size = costs->cols * costs->rows;
 
-
     int *min_costs = (int *)malloc(sizeof(int)*costs->cols*costs->rows);
     int *agg_costs = (int *)malloc(sizeof(int)*costs->cols*costs->rows);
 
+    int span = (num_wires + nproc - 1)/nproc;
+    int startIndex = procID*span;
+    startIndex = MIN(num_wires, startIndex);
+    int endIndex = startIndex + span;
+    endIndex = MIN(num_wires, endIndex);
+
     for (int iter = 0; iter < 5; iter++) {
-    int batchSize = num_wires/100  + 1;
-    for (int b = 0; b < num_wires; b+= batchSize) {
-        int span = (batchSize + nproc - 1)/ nproc;
-        int startIndex = MIN(b + batchSize, b + (procID * span));
-        startIndex = MIN(num_wires, startIndex);
-        int endIndex = MIN(b + batchSize, b + (startIndex + span));
-        endIndex = MIN(num_wires, endIndex);
 
         for (int i = startIndex; i < endIndex; i++) {
 
@@ -370,12 +372,11 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
             numPaths = abs(x1 - x2) + abs(y1-y2);
             numPaths_x = abs(x1 - x2);
 
+            if (iter != 0) traverse_path(wires[i].x1, wires[i].y1, wires[i].x2, wires[i].y2, wires[i].path, wires[i].bend, costs, -1);
 
-            if (procID == root) traverse_path(w->x1, w->y1, w->x2, w->y2, w->path, w->bend, costs, -1);
+            choice = rand() % 100;
 
-            choice = rand() % 2;
-
-            if (choice == 0) {
+            if (choice > 10) {
                 for (int j = 0; j < numPaths; j++) {
                     if (j < numPaths_x) {
                         path = 0;
@@ -426,48 +427,109 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
                 }
             }
 
+            traverse_path(wires[i].x1, wires[i].y1, wires[i].x2, wires[i].y2, wires[i].path, wires[i].bend, costs, 1);
         }
 
-        if (procID != root) {
-            MPI_Send(&wires[startIndex], endIndex - startIndex, MPI_INT, root, tag0, MPI_COMM_WORLD);
-        }
-
-        if (procID == root) {
-            for (int source = 1; source < nproc; source++) {
-                 int startIndex = MIN(b + batchSize, b + (source * span));
-                 int endIndex = MIN(b + batchSize, b + (startIndex + span));
-                 endIndex = MIN(num_wires, endIndex);
-                 startIndex = MIN(num_wires, startIndex);
-
-
-                 MPI_Recv(&wires[startIndex], endIndex - startIndex, MPI_INT, source, tag0, MPI_COMM_WORLD, &status0);
-            }
-            int end = b + batchSize;
-            for (int i = b; i < end; i++) {
-                traverse_path(wires[i].x1, wires[i].y1, wires[i].x2, wires[i].y2, wires[i].path, wires[i].bend, costs, 1);
-            }
-        }
-        //MPI_Bcast(costs->array, size, MPI_INT, root, MPI_COMM_WORLD);
-        //MPI_Bcast(costs->transpose, size, MPI_INT, root, MPI_COMM_WORLD);
     }
-}
+
+    if (procID != root) {
+        
+        
+        int *bend_array = (int *)malloc(sizeof(int)*(endIndex - startIndex));
+        int *paths_array = (int *)malloc(sizeof(int)*(endIndex - startIndex));
+
+        for (int i = 0; i < (endIndex - startIndex); i++) {
+            bend_array[i] = wires[startIndex + i].bend;
+            paths_array[i] = wires[startIndex + i].path;
+        }
+        MPI_Send(costs->array, size, MPI_INT, root, tag0, MPI_COMM_WORLD);
+        MPI_Send(bend_array, endIndex - startIndex, MPI_INT, root, tag1, MPI_COMM_WORLD);
+        MPI_Send(paths_array, endIndex - startIndex, MPI_INT, root, tag2, MPI_COMM_WORLD);
+
+
+    }
 
     if (procID == root) {
+        int *final_array = (int *)malloc(sizeof(int)*size*nproc);
+        int *bend_array = (int *)malloc(sizeof(int)*(num_wires));
+        int *path_array = (int *)malloc(sizeof(int)*(num_wires));
+        for (int source = 1; source < nproc; source++) {
+            int startIndex = source*span;
+            startIndex = MIN(num_wires, startIndex);
+            int endIndex = startIndex + span;
+            endIndex = MIN(num_wires, endIndex);
+            MPI_Recv(&final_array[size*source], size, MPI_INT, source, tag0, MPI_COMM_WORLD, &status0);
+            MPI_Recv(&bend_array[startIndex], endIndex - startIndex, MPI_INT, source, tag1, MPI_COMM_WORLD, &status1);
+            MPI_Recv(&path_array[startIndex], endIndex - startIndex, MPI_INT, source, tag2, MPI_COMM_WORLD, &status2);
+
+        }
+
+        for (int i = endIndex; i < num_wires; i++) {
+            wires[i].path = path_array[i];
+            wires[i].bend = bend_array[i];
+        }
+
+        for (int i = 0; i < size; i++) {
+            for (int j = 1; j < nproc; j++) {
+                costs->array[i] += final_array[j*size + i];
+            }
+        }
+
         int maxCost = 0;
         for (int i = 0; i < size; i++) {
             if (costs->array[i] > maxCost) maxCost = costs->array[i];
         }
         fprintf(stdout, "cost = %d \n", maxCost);
+        writeCost(inputFilename, nproc);
+        writeOutput(inputFilename, nproc);
     }
 
-    free(costs->array);
-    free(costs->transpose);
-    free(costs);
-    free(wires);
-   free(min_costs);
-   free(agg_costs);
 }
 
+
+//         if (procID != root) {
+//             MPI_Send(&wires[startIndex], endIndex - startIndex, MPI_INT, root, tag0, MPI_COMM_WORLD);
+//         }
+
+//         if (procID == root) {
+//             for (int source = 1; source < nproc; source++) {
+//                  int startIndex = MIN(b + batchSize, b + (source * span));
+//                  int endIndex = MIN(b + batchSize, b + (startIndex + span));
+//                  endIndex = MIN(num_wires, endIndex);
+//                  startIndex = MIN(num_wires, startIndex);
+
+
+//                  MPI_Recv(&wires[startIndex], endIndex - startIndex, MPI_INT, source, tag0, MPI_COMM_WORLD, &status0);
+//             }
+//             int end = b + batchSize;
+//             for (int i = b; i < end; i++) {
+//                 traverse_path(wires[i].x1, wires[i].y1, wires[i].x2, wires[i].y2, wires[i].path, wires[i].bend, costs, 1);
+//             }
+//         }
+//         MPI_Bcast(costs->array, size, MPI_INT, root, MPI_COMM_WORLD);
+//         MPI_Bcast(costs->transpose, size, MPI_INT, root, MPI_COMM_WORLD);
+//     }  
+// }
+
+//     if (procID == root) {
+//         int maxCost = 0;
+//         for (int i = 0; i < size; i++) {
+//             if (costs->array[i] > maxCost) maxCost = costs->array[i];
+//         }
+//         fprintf(stdout, "cost = %d \n", maxCost);
+//         writeCost(inputFilename, nproc);
+//         writeOutput(inputFilename, nproc);
+//     }
+
+// //     free(costs->array);
+// //     free(costs->transpose);
+// //     free(costs);
+// //     free(wires);
+// //     free(min_costs);
+// //     free(agg_costs);
+// // }
+
+// }
 
 // void compute(int procID, int nproc, char* inputFilename, double prob, int numIterations)
 // {
