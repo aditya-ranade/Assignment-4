@@ -476,10 +476,14 @@ void compute(int procID, int nproc, char* inputFilename, double prob, int numIte
         }
 
         int maxCost = 0;
+        int sumOfSquares = 0;
         for (int i = 0; i < size; i++) {
-            if (costs->array[i] > maxCost) maxCost = costs->array[i];
+            int curr = costs->array[i];
+            if (curr > maxCost) maxCost = curr;
+            sumOfSquares += (curr*curr);
         }
-        fprintf(stdout, "cost = %d \n", maxCost);
+        fprintf(stdout, "Max Cost = %d \n", maxCost);
+        fprintf(stdout, "Sum of Squares Cost = %d \n", sumOfSquares);
         writeCost(inputFilename, nproc);
         writeOutput(inputFilename, nproc);
     }
